@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import datetime
+import html
 import os
 import re
 
@@ -12,7 +13,7 @@ FEEDS = [
     ("Quantum Journal", "https://quantum-journal.org/feed/"),
     ("npj Quantum Information", "https://www.nature.com/npjqi.rss"),
     ("ACM TQC", "https://dl.acm.org/action/showFeed?type=etoc&feed=rss&jc=tqc"),
-    ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8964404.XML"),
+    ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8924785.XML"),
 ]
 
 INCLUDE_PATTERN = re.compile(
@@ -45,6 +46,12 @@ def matches_criteria(title: str, summary: str) -> bool:
     return bool(INCLUDE_PATTERN.search(text))
 
 
+def clean_summary(raw: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", raw or "")
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def build_feed(output_dir: str = "public") -> None:
     os.makedirs(output_dir, exist_ok=True)
     xml_path = os.path.join(output_dir, "feed.xml")
@@ -68,6 +75,7 @@ def build_feed(output_dir: str = "public") -> None:
 
     seen_links = set()
     entries_count = 0
+    collected = []
 
     for source_name, url in FEEDS:
         try:
@@ -97,33 +105,112 @@ def build_feed(output_dir: str = "public") -> None:
                 entry.link(href=link)
                 entry.description(summary)
 
-                published = getattr(item, "published_parsed", None)
+                published = getattr(item, "published_parsed", None) or getattr(
+                    item, "updated_parsed", None
+                )
                 if published:
                     published_date = datetime.datetime(
                         *published[:6], tzinfo=datetime.timezone.utc
                     )
-                    entry.pubDate(published_date)
                 else:
-                    entry.pubDate(datetime.datetime.now(datetime.timezone.utc))
+                    published_date = datetime.datetime.now(
+                        datetime.timezone.utc
+                    )
+                entry.pubDate(published_date)
+
+                collected.append(
+                    {
+                        "source": source_name,
+                        "title": title,
+                        "link": link,
+                        "summary": clean_summary(summary),
+                        "published": published_date,
+                    }
+                )
 
     fg.rss_file(xml_path, pretty=True)
 
-    with open(html_path, "w", encoding="utf-8") as html_file:
-        html_file.write(
-            f"""<!DOCTYPE html>
-<html>
+    by_source = {name: [] for name, _ in FEEDS}
+    for entry_item in collected:
+        by_source[entry_item["source"]].append(entry_item)
+
+    sections = []
+    for source_name, _ in FEEDS:
+        items = by_source[source_name]
+        if not items:
+            continue
+        items.sort(
+            key=lambda e: e["published"]
+            or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+            reverse=True,
+        )
+        rows = []
+        for item in items:
+            date_str = item["published"].strftime("%Y-%m-%d")
+            snippet = item["summary"]
+            if len(snippet) > 280:
+                snippet = snippet[:280].rstrip() + "\u2026"
+            summary_html = (
+                f'\n        <p class="summary">{html.escape(snippet)}</p>'
+                if snippet
+                else ""
+            )
+            rows.append(
+                "      <li>\n"
+                f'        <a href="{html.escape(item["link"], quote=True)}">'
+                f'{html.escape(item["title"])}</a>'
+                f'\n        <span class="date">{date_str}</span>'
+                f"{summary_html}\n"
+                "      </li>"
+            )
+        sections.append(
+            f'  <section>\n    <h3>{html.escape(source_name)} '
+            f'<span class="count">{len(items)}</span></h3>\n'
+            "    <ul>\n" + "\n".join(rows) + "\n    </ul>\n  </section>"
+        )
+
+    sections_html = "\n".join(sections)
+    last_updated = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%d %H:%M UTC"
+    )
+
+    page = f"""<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quantum Systems Feed</title>
+  <style>
+    :root {{ color-scheme: light dark; }}
+    body {{ font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+           max-width: 760px; margin: 0 auto; padding: 32px 20px; line-height: 1.55; }}
+    h2 {{ margin-bottom: 4px; }}
+    .sub {{ margin-top: 0; opacity: 0.75; }}
+    section {{ margin-top: 28px; }}
+    h3 {{ margin-bottom: 8px; border-bottom: 1px solid currentColor;
+         padding-bottom: 4px; }}
+    h3 .count {{ font-weight: normal; opacity: 0.6; font-size: 0.9em; }}
+    ul {{ list-style: none; padding: 0; margin: 0; }}
+    li {{ padding: 10px 0; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }}
+    li a {{ font-weight: 600; text-decoration: none; }}
+    li a:hover {{ text-decoration: underline; }}
+    .date {{ font-size: 0.82em; opacity: 0.65; margin-left: 6px; }}
+    .summary {{ margin: 4px 0 0; font-size: 0.9em; opacity: 0.85; }}
+    footer {{ margin-top: 36px; font-size: 0.85em; opacity: 0.7; }}
+  </style>
 </head>
-<body style="font-family: sans-serif; max-width: 650px; margin: 40px auto; line-height: 1.6;">
+<body>
   <h2>Quantum Systems, Compilation &amp; Theory Feed</h2>
-  <p>Aggregating PRX Quantum, Quantum, npj QI, ACM TQC, and IEEE TQE.</p>
+  <p class="sub">Aggregating PRX Quantum, Quantum, npj QI, ACM TQC, and IEEE TQE.</p>
   <p>Subscribe via RSS: <a href="feed.xml"><code>feed.xml</code></a></p>
-  <p><em>Last updated: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} ({entries_count} entries)</em></p>
+{sections_html}
+  <footer>Last updated: {last_updated} ({entries_count} entries)</footer>
 </body>
-</html>"""
-        )
+</html>
+"""
+
+    with open(html_path, "w", encoding="utf-8") as html_file:
+        html_file.write(page)
 
     print(f"Generated {xml_path} with {entries_count} entries.")
 
