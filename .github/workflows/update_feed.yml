@@ -28,20 +28,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
         with:
           python-version: '3.11'
-          cache: 'pip'
+          enable-cache: true
+          cache-python: true
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+        run: uv sync --frozen
 
       - name: Generate filtered feed
-        run: |
-          python scripts/aggregate.py
+        run: uv run --frozen python scripts/aggregate.py
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6

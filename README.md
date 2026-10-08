@@ -4,11 +4,11 @@ This repository aggregates papers matching quantum systems, compilation, and the
 
 ## Local usage
 
-Install the dependencies and generate the static site:
+Requires [uv](https://docs.astral.sh/uv/). Install the dependencies and generate the static site:
 
 ```bash
-python -m pip install -r requirements.txt
-python scripts/aggregate.py
+uv sync
+uv run python scripts/aggregate.py
 ```
 
 The generated RSS feed is written to `public/feed.xml`, with a landing page at `public/index.html` that lists the matched papers grouped by source.
