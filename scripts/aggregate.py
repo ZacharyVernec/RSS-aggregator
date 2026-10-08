@@ -114,9 +114,9 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
               justify-content: space-between; margin: 14px 0 4px; }
     .status { font-size: .82em; opacity: .72; }
     .buttons { display: flex; gap: 6px; flex-wrap: wrap; }
-    button { font: inherit; cursor: pointer; border-radius: 8px; padding: 3px 9px;
+    button { font: inherit; cursor: pointer; border-radius: 6px; padding: 1px 7px;
              border: 1px solid rgba(128,128,128,.45); background: transparent;
-             color: inherit; line-height: 1.25; }
+             color: inherit; line-height: 1.2; }
     button:hover { background: rgba(128,128,128,.15); }
     button.on { background: rgba(64,160,255,.22); border-color: rgba(64,160,255,.85); }
     details.source { margin-top: 20px; }
@@ -135,7 +135,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     li.entry .title:hover { text-decoration: underline; }
     .date { font-size: .8em; opacity: .65; white-space: nowrap; }
     .summary-text { margin: 4px 0 8px; font-size: .9em; opacity: .85; }
-    .actions { display: flex; gap: 6px; }
+    .actions { display: flex; gap: 5px; }
+    .actions button { font-size: .78em; padding: 1px 6px; }
     .settings { margin: 8px 0 0; font-size: .88em; }
     .settings > summary { cursor: pointer; opacity: .8; }
     .field { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
@@ -244,7 +245,7 @@ window.__REPO__ = __REPO_JSON__;</script>
       up.setAttribute("aria-pressed", vote === "up" ? "true" : "false");
       down.setAttribute("aria-pressed", vote === "down" ? "true" : "false");
       hide.classList.toggle("on", isHidden);
-      hide.textContent = isHidden ? "↩ Restore" : "🙈 Hide";
+      hide.textContent = isHidden ? "Restore" : "Hide";
       hide.title = isHidden ? "Restore" : "Hide";
       var target = isHidden ? hiddenList : bySource[li.getAttribute("data-source")];
       if (target && li.parentElement !== target) target.appendChild(li);
@@ -478,11 +479,11 @@ def build_feed(output_dir: str = "public") -> None:
             f"{summary_html}"
             '<div class="actions">'
             '<button class="act" type="button" data-action="up" '
-            'aria-pressed="false" title="More like this">👍</button>'
+            'aria-pressed="false" title="More like this">Up</button>'
             '<button class="act" type="button" data-action="down" '
-            'aria-pressed="false" title="Less like this">👎</button>'
+            'aria-pressed="false" title="Less like this">Down</button>'
             '<button class="act" type="button" data-action="hide" '
-            'aria-pressed="false" title="Hide">🙈 Hide</button>'
+            'aria-pressed="false" title="Hide">Hide</button>'
             "</div>"
             "</li>"
         )

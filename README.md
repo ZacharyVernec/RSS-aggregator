@@ -15,12 +15,12 @@ The generated RSS feed is written to `public/feed.xml`, with a landing page at `
 
 ## Feedback
 
-The landing page lets you 👍/👎 each paper and hide ones you don't want to see. Feedback is saved
+The landing page lets you vote up or down on each paper and hide ones you don't want to see. Feedback is saved
 immediately to the browser's `localStorage` and, once a token is configured, committed to
 [`feedback.json`](feedback.json) so the generator and future models can use it:
 
-- **👍 / 👎** — records a preference for the paper.
-- **🙈 Hide** — moves the paper out of its source list into a collapsed **Hidden** section. It stays
+- **Up / Down** — records a preference for the paper.
+- **Hide** — moves the paper out of its source list into a collapsed **Hidden** section. It stays
   in `feed.xml` and can be restored from that section at any time.
 - **Expand all / Collapse all** — opens or closes every source section.
 
