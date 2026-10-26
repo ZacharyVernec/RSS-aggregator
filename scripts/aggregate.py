@@ -896,7 +896,7 @@ def build_feed(output_dir: str = "public") -> None:
             ]
             hidden_rows.extend(render_entry(i) for i in hidden_items)
             cat_sections.append(
-                f'<details class="source" data-category="{cid}" open>\n'
+                f'<details class="source" data-category="{cid}">\n'
                 f'  <summary><span class="src">{html.escape(source_name)}</span> '
                 f'<span class="count">{len(visible_items)}</span></summary>\n'
                 f'  <ul class="entries" data-source="{html.escape(source_name, quote=True)}">\n'
