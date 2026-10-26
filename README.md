@@ -25,6 +25,31 @@ The generated feeds and web page are written to `public/`:
 - `public/feed-industry.xml` — RSS feed for industry technical whitepapers and engineering posts only
 - `public/feed-blogs.xml` — RSS feed for academic personal blogs only (unfiltered)
 
+## Important Papers & Notable Authors
+
+Important papers are visually distinguished in the web feed with an eye-catching monochrome star (**★**) and larger bold typography (1.15em), making them stand out at a glance while preserving the site's clean aesthetic.
+
+A paper is marked as important if:
+1. **Authored by a notable researcher**: It is authored or co-authored by any researcher listed in [`authors.json`](authors.json).
+2. **Upvoted by you**: Clicking the **Up** button immediately stars and highlights the paper.
+
+### Filtering Important Papers
+Use the **★ Important only** button in the topbar to instantly toggle the view between the full chronological feed and only starred/important papers. Tab badges and section counts dynamically update to reflect the filtered view, and your preference is remembered across sessions.
+
+### Customizing Authors
+The tracked researcher list is stored in [`authors.json`](authors.json) at the repository root. You can easily add, remove, or modify names:
+
+```json
+[
+  "Daniel Gottesman",
+  "John Preskill",
+  "Craig Gidney",
+  "Michael Nielsen",
+  "Isaac Chuang",
+  "..."
+]
+```
+
 ## Feedback
 
 The landing page lets you vote up or down on each paper and hide ones you don't want to see. Feedback is saved

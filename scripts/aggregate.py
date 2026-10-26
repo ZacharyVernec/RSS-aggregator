@@ -106,6 +106,7 @@ REQUEST_ATTEMPTS = 2
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEEDBACK_FILE = os.path.join(REPO_ROOT, "feedback.json")
+AUTHORS_FILE = os.path.join(REPO_ROOT, "authors.json")
 
 
 def detect_repo() -> tuple:
@@ -144,6 +145,80 @@ def load_feedback() -> dict:
         return {}
     articles = data.get("articles") if isinstance(data, dict) else None
     return articles if isinstance(articles, dict) else {}
+
+
+def load_authors() -> list[tuple[str, re.Pattern]]:
+    """Load notable authors and build regex match patterns for each."""
+    try:
+        with open(AUTHORS_FILE, encoding="utf-8") as handle:
+            raw_authors = json.load(handle)
+    except FileNotFoundError:
+        return []
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[WARN] Could not read {AUTHORS_FILE}: {exc}")
+        return []
+
+    if isinstance(raw_authors, dict):
+        raw_authors = raw_authors.get("authors", [])
+    if not isinstance(raw_authors, list):
+        return []
+
+    compiled = []
+    ambiguous_surnames = {"brown", "cross", "white", "lee", "smith", "jones", "wong", "yang"}
+
+    for item in raw_authors:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        name = item.strip()
+        parts = name.split()
+        if len(parts) >= 2:
+            first = parts[0]
+            last = parts[-1]
+            first_initial = first[0]
+            if last.lower() in ambiguous_surnames:
+                pattern_str = (
+                    rf"\b(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\s+{re.escape(last)}\b|"
+                    rf"\b{re.escape(last)},\s*(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\b"
+                )
+            else:
+                pattern_str = rf"\b{re.escape(last)}\b"
+        else:
+            pattern_str = rf"\b{re.escape(name)}\b"
+        try:
+            compiled.append((name, re.compile(pattern_str, re.IGNORECASE)))
+        except Exception as exc:
+            print(f"[WARN] Failed to compile author regex for '{name}': {exc}")
+    return compiled
+
+
+def extract_authors(item, source_name: str) -> list[str]:
+    """Extract candidate author strings from feedparser entry and source."""
+    authors = []
+    raw_authors = getattr(item, "authors", None)
+    if raw_authors and isinstance(raw_authors, list):
+        for a in raw_authors:
+            if isinstance(a, dict) and a.get("name"):
+                authors.append(a["name"])
+            elif isinstance(a, str):
+                authors.append(a)
+    single_author = getattr(item, "author", None)
+    if single_author and isinstance(single_author, str):
+        authors.append(single_author)
+    creator = getattr(item, "dc_creator", None) or getattr(item, "creator", None)
+    if creator and isinstance(creator, str):
+        authors.append(creator)
+    if source_name:
+        authors.append(source_name)
+    return authors
+
+
+def find_notable_author(authors: list[str], notable_authors: list[tuple[str, re.Pattern]]) -> str:
+    """Return the name of the first matching notable author, or empty string."""
+    combined = " ; ".join(authors)
+    for name, pattern in notable_authors:
+        if pattern.search(combined):
+            return name
+    return ""
 
 
 def matches_criteria(title: str, summary: str) -> bool:
@@ -238,6 +313,11 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
                     justify-content: space-between; }
     li.entry .title { font-weight: 600; text-decoration: none; }
     li.entry .title:hover { text-decoration: underline; }
+    li.entry[data-important="true"] .title { font-size: 1.15em; font-weight: 700; }
+    .star-icon { display: none; margin-right: 4px; font-style: normal; }
+    li.entry[data-important="true"] .star-icon { display: inline; }
+    body.important-only li.entry[data-important="false"] { display: none !important; }
+    button#toggle-important.on { background: rgba(128,128,128,.28); border-color: currentColor; font-weight: 600; }
     .date { font-size: .8em; opacity: .65; white-space: nowrap; }
     .summary-text { margin: 4px 0 8px; font-size: .9em; opacity: .85; }
     .actions { display: flex; gap: 5px; }
@@ -266,6 +346,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
   <div class="topbar">
     <span class="status" id="status">Ready</span>
     <span class="buttons">
+      <button id="toggle-important" type="button" aria-pressed="false" title="Show only starred and important papers">★ Important only</button>
       <button id="expand-all" type="button">Expand all</button>
       <button id="collapse-all" type="button">Collapse all</button>
       <button id="sync-now" type="button">Sync now</button>
@@ -366,12 +447,26 @@ window.__REPO__ = __REPO_JSON__;</script>
     return map;
   }
   function render() {
+    var isImportantOnly = document.body.classList.contains("important-only");
     var hiddenList = document.getElementById("hidden-list");
     var bySource = lists();
     document.querySelectorAll("li.entry").forEach(function (li) {
       var rec = state[li.getAttribute("data-link")] || {};
       var vote = rec.vote || "";
       var isHidden = !!rec.hidden;
+      var hasNotable = !!li.getAttribute("data-notable-author");
+      var isImportant = hasNotable || vote === "up";
+      li.setAttribute("data-important", isImportant ? "true" : "false");
+      var star = li.querySelector(".star-icon");
+      if (star) {
+        if (hasNotable && vote === "up") {
+          star.title = "Notable author: " + li.getAttribute("data-notable-author") + " (Upvoted)";
+        } else if (hasNotable) {
+          star.title = "Notable author: " + li.getAttribute("data-notable-author");
+        } else if (vote === "up") {
+          star.title = "Upvoted paper";
+        }
+      }
       var up = li.querySelector('[data-action="up"]');
       var down = li.querySelector('[data-action="down"]');
       var hide = li.querySelector('[data-action="hide"]');
@@ -394,7 +489,14 @@ window.__REPO__ = __REPO_JSON__;</script>
     document.querySelectorAll("details.source").forEach(function (d) {
       var ul = d.querySelector("ul.entries");
       var count = d.querySelector(".count");
-      var n = ul ? ul.querySelectorAll("li.entry").length : 0;
+      var n = 0;
+      if (ul) {
+        ul.querySelectorAll("li.entry").forEach(function (e) {
+          if (!isImportantOnly || e.getAttribute("data-important") === "true") {
+            n++;
+          }
+        });
+      }
       if (count) count.textContent = n;
       d.style.display = n ? "" : "none";
       if (d.id === "hidden-source") {
@@ -499,6 +601,33 @@ window.__REPO__ = __REPO_JSON__;</script>
     var activePanel = document.querySelector(".tab-panel:not([hidden])") || document;
     activePanel.querySelectorAll("details.source").forEach(function (d) { d.open = false; });
   });
+
+  var IMPORTANT_KEY = "qfeed.important";
+  var importantBtn = document.getElementById("toggle-important");
+  function setImportantOnly(active) {
+    document.body.classList.toggle("important-only", active);
+    if (importantBtn) {
+      importantBtn.classList.toggle("on", active);
+      importantBtn.setAttribute("aria-pressed", active ? "true" : "false");
+    }
+    try { localStorage.setItem(IMPORTANT_KEY, active ? "1" : "0"); } catch (e) {}
+    render();
+  }
+  if (importantBtn) {
+    importantBtn.addEventListener("click", function () {
+      var active = !document.body.classList.contains("important-only");
+      setImportantOnly(active);
+    });
+  }
+  var initImportant = false;
+  try { initImportant = localStorage.getItem(IMPORTANT_KEY) === "1"; } catch (e) {}
+  if (initImportant) {
+    document.body.classList.add("important-only");
+    if (importantBtn) {
+      importantBtn.classList.add("on");
+      importantBtn.setAttribute("aria-pressed", "true");
+    }
+  }
   document.getElementById("sync-now").addEventListener("click", sync);
   document.getElementById("save-token").addEventListener("click", function () {
     var v = (document.getElementById("token").value || "").trim();
@@ -565,6 +694,7 @@ def build_feed(output_dir: str = "public") -> None:
     site_url = f"https://{repo_owner}.github.io/{repo_name}/"
     feed_url = f"{site_url}feed.xml"
     feedback = load_feedback()
+    notable_authors = load_authors()
 
     # Main combined feed
     fg = FeedGenerator()
@@ -627,6 +757,9 @@ def build_feed(output_dir: str = "public") -> None:
                     entries_count += 1
                     added_for_source += 1
 
+                    entry_authors = extract_authors(item, source_name)
+                    matched_notable = find_notable_author(entry_authors, notable_authors)
+
                     published = getattr(item, "published_parsed", None) or getattr(
                         item, "updated_parsed", None
                     )
@@ -666,6 +799,7 @@ def build_feed(output_dir: str = "public") -> None:
                             "link": link,
                             "summary": clean_summary(summary),
                             "published": published_date,
+                            "notable_author": matched_notable,
                         }
                     )
 
@@ -675,6 +809,9 @@ def build_feed(output_dir: str = "public") -> None:
 
     if os.path.exists(FEEDBACK_FILE):
         shutil.copyfile(FEEDBACK_FILE, os.path.join(output_dir, "feedback.json"))
+
+    if os.path.exists(AUTHORS_FILE):
+        shutil.copyfile(AUTHORS_FILE, os.path.join(output_dir, "authors.json"))
 
     by_source = {}
     for cat in CATEGORIES:
@@ -697,12 +834,24 @@ def build_feed(output_dir: str = "public") -> None:
         safe_link = html.escape(item["link"], quote=True)
         safe_source = html.escape(item["source"], quote=True)
         safe_title = html.escape(item["title"], quote=True)
+        notable = item.get("notable_author", "")
+        safe_notable = html.escape(notable, quote=True)
+        is_up = record.get("vote") == "up"
+        is_important = bool(notable or is_up)
+        important_attr = "true" if is_important else "false"
+
+        star_title = f"Notable author: {notable}" if notable else "Upvoted paper"
+        star_html = (
+            f'<span class="star-icon" title="{html.escape(star_title, quote=True)}">★ </span>'
+        )
+
         return (
             f'    <li class="entry" data-link="{safe_link}" '
             f'data-source="{safe_source}" data-title="{safe_title}" '
-            f'data-hidden="{hidden_attr}">'
+            f'data-hidden="{hidden_attr}" data-important="{important_attr}" '
+            f'data-notable-author="{safe_notable}">'
             '<div class="row">'
-            f'<a class="title" href="{safe_link}">{html.escape(item["title"])}</a>'
+            f'<a class="title" href="{safe_link}">{star_html}{html.escape(item["title"])}</a>'
             f'<span class="date">{date_str}</span>'
             "</div>"
             f"{summary_html}"
