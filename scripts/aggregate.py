@@ -39,7 +39,7 @@ CATEGORIES = [
         "description": "Technical engineering blogs, benchmarks, and architecture whitepapers from quantum industry leaders.",
         "feeds": [
             ("AWS Quantum Blog", "https://aws.amazon.com/blogs/quantum-computing/feed/"),
-            ("Microsoft Quantum Blog", "https://cloudblogs.microsoft.com/quantum/feed/"),
+            ("Microsoft Quantum Blog", "https://devblogs.microsoft.com/qsharp/feed/"),
             ("Qiskit Blog", "https://medium.com/feed/qiskit"),
             ("Google Research", "https://research.google/blog/rss/"),
             ("IBM Research", "https://research.ibm.com/rss"),
@@ -56,7 +56,7 @@ CATEGORIES = [
             ("Quantum Frontiers (IQIM Caltech)", "https://quantumfrontiers.com/feed/"),
             ("Earl Campbell (Quantum Wizardry)", "https://earltcampbell.com/feed/"),
             ("Thomas Vidick (MyCQstate)", "https://mycqstate.wordpress.com/feed/"),
-            ("Henry Yuen", "https://www.henryyuen.net/posts/feed.xml"),
+            ("Dave Bacon (The Quantum Pontiff)", "https://dabacon.org/pontiff/feed/"),
             ("Gil Kalai (Combinatorics and more)", "https://gilkalai.wordpress.com/feed/"),
             ("Matt Leifer", "https://mattleifer.info/feed/"),
             ("Vivien Londe", "https://vivienlonde.github.io/feed.xml"),
@@ -66,7 +66,7 @@ CATEGORIES = [
                 "https://blog.computationalcomplexity.org/feeds/posts/default?alt=rss",
             ),
             ("Gödel's Lost Letter", "https://rjlipton.com/feed/"),
-            ("The Quantum Stack", "https://thequantumstack.substack.com/feed"),
+            ("QuTech", "https://qutech.nl/feed/"),
         ],
     },
 ]
@@ -77,9 +77,9 @@ INCLUDE_PATTERN = re.compile(
     r"\b(compil|transpil|synthesis|partition|routing|cutting|distribut|interconnect|e-bit|"
     r"teleport|fault-tolerant|error[- ]correct|qec|qldpc|surface code|lattice surgery|"
     r"stabilizer|magic state|zx[- ]calc|tensor network|algorithm|qft|resource estimation|"
-    r"mapping|scheduling|one-shot|channel simulation|interferometry|diagonalization|"
+    r"mapping|scheduling|schedulers?|one-shot|channel simulation|interferometry|diagonalization|"
     r"logical qubit|syndrome|decod|circuit optimization|qir|openqasm|pulse[- ]level|"
-    r"benchmarking)\b",
+    r"block[- ]encoding|benchmarking)\b",
     re.IGNORECASE,
 )
 
