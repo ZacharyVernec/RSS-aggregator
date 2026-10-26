@@ -99,6 +99,11 @@ REQUEST_HEADERS = {
     )
 }
 
+# Some publishers (e.g. quantum-journal.org) are slow to render their feeds, so
+# allow a generous per-request timeout and retry once before giving up.
+REQUEST_TIMEOUT = 45
+REQUEST_ATTEMPTS = 2
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEEDBACK_FILE = os.path.join(REPO_ROOT, "feedback.json")
 
@@ -152,6 +157,23 @@ def clean_summary(raw: str) -> str:
     text = re.sub(r"<[^>]+>", " ", raw or "")
     text = html.unescape(text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def fetch_feed(source_name: str, url: str):
+    """Fetch and parse a feed, retrying once on transient network failures."""
+    last_error = "unknown error"
+    for attempt in range(1, REQUEST_ATTEMPTS + 1):
+        try:
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
+            if response.status_code == 200:
+                return feedparser.parse(response.content)
+            last_error = f"HTTP {response.status_code}"
+        except Exception as exc:
+            last_error = str(exc)
+        if attempt < REQUEST_ATTEMPTS:
+            print(f"[WARN] {source_name}: {last_error} — retrying")
+    print(f"[ERROR] Failed fetching {source_name}: {last_error}")
+    return None
 
 
 PAGE_TEMPLATE = """<!DOCTYPE html>
@@ -578,14 +600,8 @@ def build_feed(output_dir: str = "public") -> None:
         cid = cat["id"]
         is_exempt = cat.get("exempt_from_filters", False)
         for source_name, url in cat["feeds"]:
-            try:
-                response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
-                if response.status_code != 200:
-                    print(f"[WARN] HTTP {response.status_code} fetching {source_name}")
-                    continue
-                feed = feedparser.parse(response.content)
-            except Exception as exc:
-                print(f"[ERROR] Failed fetching {source_name}: {exc}")
+            feed = fetch_feed(source_name, url)
+            if feed is None:
                 continue
 
             added_for_source = 0
