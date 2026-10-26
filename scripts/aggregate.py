@@ -41,6 +41,7 @@ CATEGORIES = [
             ("AWS Quantum Blog", "https://aws.amazon.com/blogs/quantum-computing/feed/"),
             ("Microsoft Quantum Blog", "https://devblogs.microsoft.com/qsharp/feed/"),
             ("Qiskit Blog", "https://medium.com/feed/qiskit"),
+            ("Quandela Blog", "https://medium.com/feed/quandela"),
             ("Google Research", "https://research.google/blog/rss/"),
             ("IBM Research", "https://research.ibm.com/rss"),
         ],
@@ -50,6 +51,9 @@ CATEGORIES = [
         "title": "Academic Blogs",
         "description": "Personal research blogs, essays, and notes from quantum computing, QEC, and theoretical computer science academics (exempt from keyword filters).",
         "exempt_from_filters": True,
+        "manual_links": [
+            ("Henry Yuen", "https://www.henryyuen.net/posts"),
+        ],
         "feeds": [
             ("Scott Aaronson (Shtetl-Optimized)", "https://scottaaronson.blog/?feed=rss2"),
             ("Craig Gidney (Algorithmic Assertions)", "https://algassert.com/feed.xml"),
@@ -297,6 +301,9 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     }
     .tab-panel[hidden] { display: none !important; }
     .tab-desc { font-size: .88em; opacity: .75; margin: 6px 0 14px; font-style: italic; }
+    .manual-links { font-size: .86em; opacity: .8; margin: -8px 0 14px; }
+    .manual-links a { text-decoration: underline; text-underline-offset: 2px; }
+    .manual-links a:hover { opacity: 1; }
     .empty-state { padding: 24px 0; opacity: .6; font-size: .95em; text-align: center; }
 
     details.source { margin-top: 18px; }
@@ -899,6 +906,17 @@ def build_feed(output_dir: str = "public") -> None:
 
         empty_text = "No blog posts currently available." if cat.get("exempt_from_filters") else "No matching articles in this category currently."
         cat_body = "\n".join(cat_sections) if cat_sections else f'<p class="empty-state">{empty_text}</p>'
+        manual_html = ""
+        manual_links = cat.get("manual_links") or []
+        if manual_links:
+            link_items = " &middot; ".join(
+                f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+                for label, url in manual_links
+            )
+            manual_html = (
+                '  <p class="manual-links">No RSS feed yet &mdash; visit directly: '
+                f"{link_items}</p>\n"
+            )
         is_first = (cid == "journals")
         hidden_attr = "" if is_first else " hidden"
         active_cls = " active" if is_first else ""
@@ -906,6 +924,7 @@ def build_feed(output_dir: str = "public") -> None:
             f'<div class="tab-panel{active_cls}" id="tab-panel-{cid}" role="tabpanel" '
             f'aria-labelledby="tab-btn-{cid}"{hidden_attr}>\n'
             f'  <p class="tab-desc">{html.escape(cat["description"])}</p>\n'
+            f"{manual_html}"
             f'  {cat_body}\n'
             f'</div>'
         )
