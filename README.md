@@ -1,6 +1,12 @@
 # Quantum Feed
 
-This repository aggregates papers matching quantum systems, compilation, and theory keywords from PRX Quantum, Quantum, npj Quantum Information, ACM TQC, and IEEE TQE.
+This repository aggregates papers and whitepapers matching quantum systems, compilation, and theory keywords across peer-reviewed journals, arXiv preprints, and industry technical leaders.
+
+The landing page organizes matched articles into four dedicated tabs:
+1. **Journals**: Peer-reviewed publications from PRX Quantum, Quantum, npj Quantum Information, Quantum Science and Technology, ACM TQC, and IEEE TQE.
+2. **arXiv**: Preprints from arXiv `quant-ph`.
+3. **Industry & Whitepapers**: Technical engineering blogs, benchmarks, and architecture whitepapers from AWS Quantum, Microsoft Quantum, Qiskit, Google Research, and IBM Research.
+4. **Academic Blogs**: Personal research blogs, essays, and notes from quantum computing, QEC, and theoretical computer science researchers (Scott Aaronson, Craig Gidney, Quantum Frontiers, Earl Campbell, Thomas Vidick, Henry Yuen, Gil Kalai, Matt Leifer, Vivien Londe, Windows on Theory, Computational Complexity, Gödel's Lost Letter, and The Quantum Stack). **Exempt from keyword filters** so personal essays and commentary are preserved in full.
 
 ## Local usage
 
@@ -11,7 +17,13 @@ uv sync
 uv run python scripts/aggregate.py
 ```
 
-The generated RSS feed is written to `public/feed.xml`, with a landing page at `public/index.html` that lists the matched papers grouped by source.
+The generated feeds and web page are written to `public/`:
+- `public/index.html` — Landing page with tabs, live filtering, and interactive feedback
+- `public/feed.xml` — Master RSS feed containing all matched articles and blog posts
+- `public/feed-journals.xml` — RSS feed for academic journal papers only
+- `public/feed-arxiv.xml` — RSS feed for arXiv preprints only
+- `public/feed-industry.xml` — RSS feed for industry technical whitepapers and engineering posts only
+- `public/feed-blogs.xml` — RSS feed for academic personal blogs only (unfiltered)
 
 ## Feedback
 
@@ -20,9 +32,9 @@ immediately to the browser's `localStorage` and, once a token is configured, com
 [`feedback.json`](feedback.json) so the generator and future models can use it:
 
 - **Up / Down** — records a preference for the paper.
-- **Hide** — moves the paper out of its source list into a collapsed **Hidden** section. It stays
+- **Hide** — moves the paper out of its source list into a collapsed **Hidden** section across all tabs. It stays
   in `feed.xml` and can be restored from that section at any time.
-- **Expand all / Collapse all** — opens or closes every source section.
+- **Expand all / Collapse all** — opens or closes source sections within the active tab.
 
 To enable committing, open **Feedback sync settings** on the page and paste a
 [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped
@@ -48,7 +60,7 @@ locally in the browser.
 }
 ```
 
-Hidden papers are omitted from `index.html` but remain in `feed.xml`.
+Hidden papers are omitted from the main tab lists in `index.html` (moved to the collapsed Hidden section) but remain in `feed.xml`.
 
 ## GitHub Pages
 
@@ -59,3 +71,4 @@ In repository settings, set **Pages > Build and deployment > Source** to **GitHu
 ```text
 https://<username>.github.io/<repository-name>/feed.xml
 ```
+and the category feeds at `feed-journals.xml`, `feed-arxiv.xml`, `feed-industry.xml`, and `feed-blogs.xml`.

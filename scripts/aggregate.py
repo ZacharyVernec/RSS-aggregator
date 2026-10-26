@@ -11,26 +11,84 @@ from feedgen.feed import FeedGenerator
 import feedparser
 import requests
 
-FEEDS = [
-    ("PRX Quantum", "https://feeds.aps.org/rss/recent/prxquantum.xml"),
-    ("Quantum Journal", "https://quantum-journal.org/feed/"),
-    ("npj Quantum Information", "https://www.nature.com/npjqi.rss"),
-    ("ACM TQC", "https://dl.acm.org/action/showFeed?type=etoc&feed=rss&jc=tqc"),
-    ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8924785.XML"),
+CATEGORIES = [
+    {
+        "id": "journals",
+        "title": "Journals",
+        "description": "Peer-reviewed papers from PRX Quantum, Quantum, npj QI, Quantum Science and Technology, ACM TQC, and IEEE TQE.",
+        "feeds": [
+            ("PRX Quantum", "https://feeds.aps.org/rss/recent/prxquantum.xml"),
+            ("Quantum Journal", "https://quantum-journal.org/feed/"),
+            ("npj Quantum Information", "https://www.nature.com/npjqi.rss"),
+            ("Quantum Science and Technology", "https://iopscience.iop.org/journal/rss/2058-9565"),
+            ("ACM TQC", "https://dl.acm.org/action/showFeed?type=etoc&feed=rss&jc=tqc"),
+            ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8924785.XML"),
+        ],
+    },
+    {
+        "id": "arxiv",
+        "title": "arXiv",
+        "description": "Preprints matching quantum systems, compilation, and theory keywords from arXiv quant-ph.",
+        "feeds": [
+            ("arXiv quant-ph", "https://rss.arxiv.org/rss/quant-ph"),
+        ],
+    },
+    {
+        "id": "industry",
+        "title": "Industry & Whitepapers",
+        "description": "Technical engineering blogs, benchmarks, and architecture whitepapers from quantum industry leaders.",
+        "feeds": [
+            ("AWS Quantum Blog", "https://aws.amazon.com/blogs/quantum-computing/feed/"),
+            ("Microsoft Quantum Blog", "https://cloudblogs.microsoft.com/quantum/feed/"),
+            ("Qiskit Blog", "https://medium.com/feed/qiskit"),
+            ("Google Research", "https://research.google/blog/rss/"),
+            ("IBM Research", "https://research.ibm.com/rss"),
+        ],
+    },
+    {
+        "id": "blogs",
+        "title": "Academic Blogs",
+        "description": "Personal research blogs, essays, and notes from quantum computing, QEC, and theoretical computer science academics (exempt from keyword filters).",
+        "exempt_from_filters": True,
+        "feeds": [
+            ("Scott Aaronson (Shtetl-Optimized)", "https://scottaaronson.blog/?feed=rss2"),
+            ("Craig Gidney (Algorithmic Assertions)", "https://algassert.com/feed.xml"),
+            ("Quantum Frontiers (IQIM Caltech)", "https://quantumfrontiers.com/feed/"),
+            ("Earl Campbell (Quantum Wizardry)", "https://earltcampbell.com/feed/"),
+            ("Thomas Vidick (MyCQstate)", "https://mycqstate.wordpress.com/feed/"),
+            ("Henry Yuen", "https://www.henryyuen.net/posts/feed.xml"),
+            ("Gil Kalai (Combinatorics and more)", "https://gilkalai.wordpress.com/feed/"),
+            ("Matt Leifer", "https://mattleifer.info/feed/"),
+            ("Vivien Londe", "https://vivienlonde.github.io/feed.xml"),
+            ("Windows on Theory", "https://windowsontheory.org/feed/"),
+            (
+                "Computational Complexity",
+                "https://blog.computationalcomplexity.org/feeds/posts/default?alt=rss",
+            ),
+            ("Gödel's Lost Letter", "https://rjlipton.com/feed/"),
+            ("The Quantum Stack", "https://thequantumstack.substack.com/feed"),
+        ],
+    },
 ]
 
+FEEDS = [feed for cat in CATEGORIES for feed in cat["feeds"]]
+
 INCLUDE_PATTERN = re.compile(
-    r"\b(compil|synthesis|partition|routing|cutting|distribut|interconnect|e-bit|"
+    r"\b(compil|transpil|synthesis|partition|routing|cutting|distribut|interconnect|e-bit|"
     r"teleport|fault-tolerant|error[- ]correct|qec|qldpc|surface code|lattice surgery|"
     r"stabilizer|magic state|zx[- ]calc|tensor network|algorithm|qft|resource estimation|"
-    r"mapping|scheduling|one-shot|channel simulation|interferometry|diagonalization)\b",
+    r"mapping|scheduling|one-shot|channel simulation|interferometry|diagonalization|"
+    r"logical qubit|syndrome|decod|circuit optimization|qir|openqasm|pulse[- ]level|"
+    r"benchmarking)\b",
     re.IGNORECASE,
 )
 
 EXCLUDE_PATTERN = re.compile(
     r"\b(fabricat|cryostat|resonator|superconducting cavity|transmon design|"
     r"dielectric loss|two-level system|majorana|topological insulator|ferromagnet|"
-    r"spin-orbit coupling|kagome|hubbard|fractional quantum hall|laser cooling|optomechanic)\b",
+    r"spin-orbit coupling|kagome|hubbard|fractional quantum hall|laser cooling|optomechanic|"
+    r"funding round|series [a-d]|financial results|quarterly results|webinar|"
+    r"appointed|appoints|sponsorship)\b",
     re.IGNORECASE,
 )
 
@@ -106,10 +164,12 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
     body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-           max-width: 840px; margin: 0 auto; padding: 28px 18px 60px; line-height: 1.55; }
+           max-width: 860px; margin: 0 auto; padding: 28px 18px 60px; line-height: 1.55; }
     h1 { font-size: 1.5rem; margin: 0 0 4px; }
     .sub { margin: 0 0 6px; opacity: .75; }
     a { color: inherit; }
+    .rss-links { font-size: .92em; margin: 4px 0 14px; opacity: .88; }
+    .rss-links code { font-size: .9em; }
     .topbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
               justify-content: space-between; margin: 14px 0 4px; }
     .status { font-size: .82em; opacity: .72; }
@@ -119,7 +179,30 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
              color: inherit; line-height: 1.2; }
     button:hover { background: rgba(128,128,128,.15); }
     button.on { background: rgba(64,160,255,.22); border-color: rgba(64,160,255,.85); }
-    details.source { margin-top: 20px; }
+
+    .tab-nav { display: flex; gap: 6px; margin: 22px 0 16px; border-bottom: 1px solid rgba(128,128,128,.3);
+               padding-bottom: 0; overflow-x: auto; }
+    .tab-btn { appearance: none; border: none; background: transparent; font: inherit;
+               font-weight: 500; color: inherit; padding: 8px 14px; cursor: pointer;
+               border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent;
+               margin-bottom: -1px; opacity: .75; display: inline-flex; align-items: center;
+               gap: 8px; white-space: nowrap; transition: all .15s ease; }
+    .tab-btn:hover { opacity: 1; background: rgba(128,128,128,.1); }
+    .tab-btn.active { opacity: 1; font-weight: 600; border-bottom-color: #2563eb; color: #2563eb; }
+    @media (prefers-color-scheme: dark) {
+      .tab-btn.active { border-bottom-color: #60a5fa; color: #60a5fa; }
+    }
+    .badge { font-size: .8em; padding: 1px 7px; border-radius: 10px;
+             background: rgba(128,128,128,.2); font-weight: 500; color: inherit; }
+    .tab-btn.active .badge { background: rgba(37,99,235,.2); }
+    @media (prefers-color-scheme: dark) {
+      .tab-btn.active .badge { background: rgba(96,165,250,.25); }
+    }
+    .tab-panel[hidden] { display: none !important; }
+    .tab-desc { font-size: .88em; opacity: .75; margin: 6px 0 14px; font-style: italic; }
+    .empty-state { padding: 24px 0; opacity: .6; font-size: .95em; text-align: center; }
+
+    details.source { margin-top: 18px; }
     details.source > summary { cursor: pointer; list-style: none; display: flex;
         align-items: baseline; gap: 8px; padding: 6px 0; font-weight: 600;
         border-bottom: 1px solid currentColor; }
@@ -149,8 +232,14 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
   <h1>Quantum Systems, Compilation &amp; Theory Feed</h1>
-  <p class="sub">Aggregating PRX Quantum, Quantum, npj QI, ACM TQC, and IEEE TQE.</p>
-  <p>Subscribe via RSS: <a href="feed.xml"><code>feed.xml</code></a></p>
+  <p class="sub">Aggregating peer-reviewed journals, arXiv preprints, industry whitepapers, and academic personal blogs.</p>
+  <p class="rss-links">Subscribe via RSS:
+    <a href="feed.xml"><strong>All Feeds</strong> (<code>feed.xml</code>)</a> &middot;
+    <a href="feed-journals.xml"><code>Journals</code></a> &middot;
+    <a href="feed-arxiv.xml"><code>arXiv</code></a> &middot;
+    <a href="feed-industry.xml"><code>Industry</code></a> &middot;
+    <a href="feed-blogs.xml"><code>Academic Blogs</code></a>
+  </p>
 
   <div class="topbar">
     <span class="status" id="status">Ready</span>
@@ -175,9 +264,33 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       generator and future models can read.</p>
   </details>
 
-__SECTIONS__
+  <nav class="tab-nav" role="tablist" aria-label="Venue Categories">
+    <button class="tab-btn active" role="tab" id="tab-btn-journals" aria-controls="tab-panel-journals" aria-selected="true" data-tab="journals">
+      Journals <span class="badge" id="badge-journals">0</span>
+    </button>
+    <button class="tab-btn" role="tab" id="tab-btn-arxiv" aria-controls="tab-panel-arxiv" aria-selected="false" data-tab="arxiv">
+      arXiv <span class="badge" id="badge-arxiv">0</span>
+    </button>
+    <button class="tab-btn" role="tab" id="tab-btn-industry" aria-controls="tab-panel-industry" aria-selected="false" data-tab="industry">
+      Industry &amp; Whitepapers <span class="badge" id="badge-industry">0</span>
+    </button>
+    <button class="tab-btn" role="tab" id="tab-btn-blogs" aria-controls="tab-panel-blogs" aria-selected="false" data-tab="blogs">
+      Academic Blogs <span class="badge" id="badge-blogs">0</span>
+    </button>
+  </nav>
 
-  <footer>Last updated: __LAST_UPDATED__ (__ENTRIES__ entries &middot; __HIDDEN__ hidden)</footer>
+  <div class="tab-panels">
+__PANELS__
+  </div>
+
+  <details class="source hidden-source" id="hidden-source" style="display:none">
+    <summary><span class="src">Hidden</span> <span class="count">__HIDDEN__</span></summary>
+    <ul class="entries" data-source="__hidden__" id="hidden-list">
+__HIDDEN_ROWS__
+    </ul>
+  </details>
+
+  <footer>Last updated: __LAST_UPDATED__ (__ENTRIES__ entries &middot; <span id="hidden-count-footer">__HIDDEN__</span> hidden)</footer>
 
 <script>window.__FEEDBACK__ = __FEEDBACK_JSON__;
 window.__REPO__ = __REPO_JSON__;</script>
@@ -250,14 +363,35 @@ window.__REPO__ = __REPO_JSON__;</script>
       var target = isHidden ? hiddenList : bySource[li.getAttribute("data-source")];
       if (target && li.parentElement !== target) target.appendChild(li);
     });
+
+    var catCounts = {};
+    document.querySelectorAll(".tab-btn").forEach(function (btn) {
+      var c = btn.getAttribute("data-tab");
+      if (c) catCounts[c] = 0;
+    });
     document.querySelectorAll("details.source").forEach(function (d) {
       var ul = d.querySelector("ul.entries");
       var count = d.querySelector(".count");
       var n = ul ? ul.querySelectorAll("li.entry").length : 0;
       if (count) count.textContent = n;
       d.style.display = n ? "" : "none";
-      if (d.id === "hidden-source" && !n) d.removeAttribute("open");
+      if (d.id === "hidden-source") {
+        if (!n) d.removeAttribute("open");
+      } else {
+        var cat = d.getAttribute("data-category");
+        if (cat && catCounts.hasOwnProperty(cat)) {
+          catCounts[cat] += n;
+        }
+      }
     });
+
+    for (var cat in catCounts) {
+      var badge = document.getElementById("badge-" + cat);
+      if (badge) badge.textContent = catCounts[cat];
+    }
+    var hiddenN = hiddenList ? hiddenList.querySelectorAll("li.entry").length : 0;
+    var footerHidden = document.getElementById("hidden-count-footer");
+    if (footerHidden) footerHidden.textContent = hiddenN;
   }
   function scheduleSync() {
     if (!token()) { setStatus("Saved locally — add a token to sync"); return; }
@@ -336,10 +470,12 @@ window.__REPO__ = __REPO_JSON__;</script>
     scheduleSync();
   });
   document.getElementById("expand-all").addEventListener("click", function () {
-    document.querySelectorAll("details.source").forEach(function (d) { d.open = true; });
+    var activePanel = document.querySelector(".tab-panel:not([hidden])") || document;
+    activePanel.querySelectorAll("details.source").forEach(function (d) { d.open = true; });
   });
   document.getElementById("collapse-all").addEventListener("click", function () {
-    document.querySelectorAll("details.source").forEach(function (d) { d.open = false; });
+    var activePanel = document.querySelector(".tab-panel:not([hidden])") || document;
+    activePanel.querySelectorAll("details.source").forEach(function (d) { d.open = false; });
   });
   document.getElementById("sync-now").addEventListener("click", sync);
   document.getElementById("save-token").addEventListener("click", function () {
@@ -352,6 +488,34 @@ window.__REPO__ = __REPO_JSON__;</script>
     document.getElementById("token").value = "";
     setStatus("Token cleared");
   });
+
+  function switchTab(tabId) {
+    document.querySelectorAll(".tab-btn").forEach(function (btn) {
+      var isCurrent = btn.getAttribute("data-tab") === tabId;
+      btn.classList.toggle("active", isCurrent);
+      btn.setAttribute("aria-selected", isCurrent ? "true" : "false");
+    });
+    document.querySelectorAll(".tab-panel").forEach(function (panel) {
+      if (panel.id === "tab-panel-" + tabId) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "until-found");
+      }
+    });
+    try { localStorage.setItem("qfeed.tab", tabId); } catch (e) {}
+  }
+
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      switchTab(btn.getAttribute("data-tab"));
+    });
+  });
+
+  var activeTab = "journals";
+  try { activeTab = localStorage.getItem("qfeed.tab") || "journals"; } catch (e) {}
+  if (document.getElementById("tab-panel-" + activeTab)) {
+    switchTab(activeTab);
+  }
 
   load();
   if (token()) document.getElementById("token").value = token();
@@ -380,78 +544,127 @@ def build_feed(output_dir: str = "public") -> None:
     feed_url = f"{site_url}feed.xml"
     feedback = load_feedback()
 
+    # Main combined feed
     fg = FeedGenerator()
     fg.id(site_url)
     fg.title("Quantum Systems, Compilation & Theory (Filtered)")
     fg.description(
-        "Automated aggregation of published papers from PRX Quantum, Quantum, "
-        "npj QI, ACM TQC, and IEEE TQE."
+        "Automated aggregation of quantum systems, compilation, and theory papers "
+        "and technical whitepapers from academic journals, arXiv, and industry leaders."
     )
     fg.link(href=site_url, rel="alternate")
     fg.link(href=feed_url, rel="self")
     fg.language("en")
 
+    # Category-specific feeds
+    category_fgs = {}
+    for cat in CATEGORIES:
+        cid = cat["id"]
+        cfg = FeedGenerator()
+        cfg.id(f"{site_url}#{cid}")
+        title_suffix = " (Unfiltered)" if cat.get("exempt_from_filters") else " (Filtered)"
+        cfg.title(f"Quantum Systems: {cat['title']}{title_suffix}")
+        cfg.description(cat["description"])
+        cfg.link(href=site_url, rel="alternate")
+        cfg.link(href=f"{site_url}feed-{cid}.xml", rel="self")
+        cfg.language("en")
+        category_fgs[cid] = cfg
+
     seen_links = set()
     entries_count = 0
     collected = []
 
-    for source_name, url in FEEDS:
-        try:
-            response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
-            if response.status_code != 200:
-                print(f"[WARN] HTTP {response.status_code} fetching {source_name}")
-                continue
-            feed = feedparser.parse(response.content)
-        except Exception as exc:
-            print(f"[ERROR] Failed fetching {source_name}: {exc}")
-            continue
-
-        for item in feed.entries:
-            link = getattr(item, "link", "")
-            if not link or link in seen_links:
+    for cat in CATEGORIES:
+        cid = cat["id"]
+        is_exempt = cat.get("exempt_from_filters", False)
+        for source_name, url in cat["feeds"]:
+            try:
+                response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
+                if response.status_code != 200:
+                    print(f"[WARN] HTTP {response.status_code} fetching {source_name}")
+                    continue
+                feed = feedparser.parse(response.content)
+            except Exception as exc:
+                print(f"[ERROR] Failed fetching {source_name}: {exc}")
                 continue
 
-            title = getattr(item, "title", "Untitled")
-            summary = getattr(item, "summary", "")
+            added_for_source = 0
+            for item in feed.entries:
+                if is_exempt and added_for_source >= 20:
+                    break
+                link = getattr(item, "link", "")
+                if not link or link in seen_links:
+                    continue
 
-            if matches_criteria(title, summary):
-                seen_links.add(link)
-                entries_count += 1
-                entry = fg.add_entry()
-                entry.id(link)
-                entry.title(f"[{source_name}] {title}")
-                entry.link(href=link)
-                entry.description(summary)
+                title = getattr(item, "title", "Untitled") or "Untitled"
+                summary = getattr(item, "summary", "")
+                if not summary and hasattr(item, "content") and item.content:
+                    try:
+                        summary = item.content[0].value
+                    except (IndexError, AttributeError):
+                        summary = ""
+                if not summary:
+                    summary = getattr(item, "description", "")
 
-                published = getattr(item, "published_parsed", None) or getattr(
-                    item, "updated_parsed", None
-                )
-                if published:
-                    published_date = datetime.datetime(
-                        *published[:6], tzinfo=datetime.timezone.utc
+                if is_exempt or matches_criteria(title, summary):
+                    seen_links.add(link)
+                    entries_count += 1
+                    added_for_source += 1
+
+                    published = getattr(item, "published_parsed", None) or getattr(
+                        item, "updated_parsed", None
                     )
-                else:
-                    published_date = datetime.datetime.now(
-                        datetime.timezone.utc
-                    )
-                entry.pubDate(published_date)
+                    if published:
+                        try:
+                            published_date = datetime.datetime(
+                                *published[:6], tzinfo=datetime.timezone.utc
+                            )
+                        except Exception:
+                            published_date = datetime.datetime.now(
+                                datetime.timezone.utc
+                            )
+                    else:
+                        published_date = datetime.datetime.now(
+                            datetime.timezone.utc
+                        )
 
-                collected.append(
-                    {
-                        "source": source_name,
-                        "title": title,
-                        "link": link,
-                        "summary": clean_summary(summary),
-                        "published": published_date,
-                    }
-                )
+                    entry = fg.add_entry()
+                    entry.id(link)
+                    entry.title(f"[{source_name}] {title}")
+                    entry.link(href=link)
+                    entry.description(summary)
+                    entry.pubDate(published_date)
+
+                    cat_entry = category_fgs[cid].add_entry()
+                    cat_entry.id(link)
+                    cat_entry.title(f"[{source_name}] {title}")
+                    cat_entry.link(href=link)
+                    cat_entry.description(summary)
+                    cat_entry.pubDate(published_date)
+
+                    collected.append(
+                        {
+                            "source": source_name,
+                            "category": cid,
+                            "title": title,
+                            "link": link,
+                            "summary": clean_summary(summary),
+                            "published": published_date,
+                        }
+                    )
 
     fg.rss_file(xml_path, pretty=True)
+    for cid, cfg in category_fgs.items():
+        cfg.rss_file(os.path.join(output_dir, f"feed-{cid}.xml"), pretty=True)
 
     if os.path.exists(FEEDBACK_FILE):
         shutil.copyfile(FEEDBACK_FILE, os.path.join(output_dir, "feedback.json"))
 
-    by_source = {name: [] for name, _ in FEEDS}
+    by_source = {}
+    for cat in CATEGORIES:
+        for name, _ in cat["feeds"]:
+            by_source[name] = []
+
     for entry_item in collected:
         by_source[entry_item["source"]].append(entry_item)
 
@@ -488,44 +701,52 @@ def build_feed(output_dir: str = "public") -> None:
             "</li>"
         )
 
-    sections = []
+    panels = []
     hidden_rows = []
-    for source_name, _ in FEEDS:
-        items = by_source[source_name]
-        if not items:
-            continue
-        items.sort(
-            key=lambda e: e["published"]
-            or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
-            reverse=True,
-        )
-        visible_items = [
-            i for i in items if not feedback.get(i["link"], {}).get("hidden")
-        ]
-        hidden_items = [
-            i for i in items if feedback.get(i["link"], {}).get("hidden")
-        ]
-        hidden_rows.extend(render_entry(i) for i in hidden_items)
-        sections.append(
-            '<details class="source" open>\n'
-            f'  <summary><span class="src">{html.escape(source_name)}</span> '
-            f'<span class="count">{len(visible_items)}</span></summary>\n'
-            f'  <ul class="entries" data-source="{html.escape(source_name, quote=True)}">\n'
-            + "\n".join(render_entry(i) for i in visible_items)
-            + "\n  </ul>\n</details>"
+
+    for cat in CATEGORIES:
+        cid = cat["id"]
+        cat_sections = []
+        for source_name, _ in cat["feeds"]:
+            items = by_source[source_name]
+            if not items:
+                continue
+            items.sort(
+                key=lambda e: e["published"]
+                or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+                reverse=True,
+            )
+            visible_items = [
+                i for i in items if not feedback.get(i["link"], {}).get("hidden")
+            ]
+            hidden_items = [
+                i for i in items if feedback.get(i["link"], {}).get("hidden")
+            ]
+            hidden_rows.extend(render_entry(i) for i in hidden_items)
+            cat_sections.append(
+                f'<details class="source" data-category="{cid}" open>\n'
+                f'  <summary><span class="src">{html.escape(source_name)}</span> '
+                f'<span class="count">{len(visible_items)}</span></summary>\n'
+                f'  <ul class="entries" data-source="{html.escape(source_name, quote=True)}">\n'
+                + "\n".join(render_entry(i) for i in visible_items)
+                + "\n  </ul>\n</details>"
+            )
+
+        empty_text = "No blog posts currently available." if cat.get("exempt_from_filters") else "No matching articles in this category currently."
+        cat_body = "\n".join(cat_sections) if cat_sections else f'<p class="empty-state">{empty_text}</p>'
+        is_first = (cid == "journals")
+        hidden_attr = "" if is_first else " hidden"
+        active_cls = " active" if is_first else ""
+        panels.append(
+            f'<div class="tab-panel{active_cls}" id="tab-panel-{cid}" role="tabpanel" '
+            f'aria-labelledby="tab-btn-{cid}"{hidden_attr}>\n'
+            f'  <p class="tab-desc">{html.escape(cat["description"])}</p>\n'
+            f'  {cat_body}\n'
+            f'</div>'
         )
 
-    sections.append(
-        '<details class="source hidden-source" id="hidden-source" '
-        'style="display:none">\n'
-        '  <summary><span class="src">Hidden</span> '
-        f'<span class="count">{len(hidden_rows)}</span></summary>\n'
-        '  <ul class="entries" data-source="__hidden__" id="hidden-list">\n'
-        + "\n".join(hidden_rows)
-        + "\n  </ul>\n</details>"
-    )
-
-    sections_html = "\n".join(sections)
+    panels_html = "\n".join(panels)
+    hidden_rows_html = "\n".join(hidden_rows)
     last_updated = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%d %H:%M UTC"
     )
@@ -538,7 +759,8 @@ def build_feed(output_dir: str = "public") -> None:
     ).replace("<", "\\u003c")
 
     page = (
-        PAGE_TEMPLATE.replace("__SECTIONS__", sections_html)
+        PAGE_TEMPLATE.replace("__PANELS__", panels_html)
+        .replace("__HIDDEN_ROWS__", hidden_rows_html)
         .replace("__FEEDBACK_JSON__", feedback_json)
         .replace("__REPO_JSON__", repo_json)
         .replace("__LAST_UPDATED__", last_updated)
@@ -550,7 +772,7 @@ def build_feed(output_dir: str = "public") -> None:
     with open(html_path, "w", encoding="utf-8") as html_file:
         html_file.write(page)
 
-    print(f"Generated {xml_path} with {entries_count} entries.")
+    print(f"Generated {xml_path} and {len(category_fgs)} category feeds with {entries_count} total entries.")
 
 
 if __name__ == "__main__":

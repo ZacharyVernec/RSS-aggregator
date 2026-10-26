@@ -1,7 +1,7 @@
 [project]
 name = "rss-aggregator"
 version = "0.1.0"
-description = "Aggregates papers matching quantum systems, compilation, and theory keywords from PRX Quantum, Quantum, npj Quantum Information, ACM TQC, and IEEE TQE into an RSS feed."
+description = "Aggregates quantum systems, compilation, and theory papers, technical whitepapers, and academic blogs into categorized RSS feeds."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
