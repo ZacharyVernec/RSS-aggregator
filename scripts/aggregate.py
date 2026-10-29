@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import unicodedata
 
 from feedgen.feed import FeedGenerator
 import feedparser
@@ -151,6 +152,12 @@ def load_feedback() -> dict:
     return articles if isinstance(articles, dict) else {}
 
 
+def normalize_text(text: str) -> str:
+    """Normalize unicode characters and strip diacritics for flexible matching."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def load_authors() -> list[tuple[str, re.Pattern]]:
     """Load notable authors and build regex match patterns for each."""
     try:
@@ -168,26 +175,22 @@ def load_authors() -> list[tuple[str, re.Pattern]]:
         return []
 
     compiled = []
-    ambiguous_surnames = {"brown", "cross", "white", "lee", "smith", "jones", "wong", "yang"}
-
     for item in raw_authors:
         if not isinstance(item, str) or not item.strip():
             continue
         name = item.strip()
-        parts = name.split()
+        norm_name = normalize_text(name)
+        parts = norm_name.split()
         if len(parts) >= 2:
             first = parts[0]
             last = parts[-1]
             first_initial = first[0]
-            if last.lower() in ambiguous_surnames:
-                pattern_str = (
-                    rf"\b(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\s+{re.escape(last)}\b|"
-                    rf"\b{re.escape(last)},\s*(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\b"
-                )
-            else:
-                pattern_str = rf"\b{re.escape(last)}\b"
+            pattern_str = (
+                rf"\b(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\s+(?:[A-Za-z]\.?\s+)*{re.escape(last)}\b|"
+                rf"\b{re.escape(last)},\s*(?:{re.escape(first)}|{re.escape(first_initial)}\.?)\b"
+            )
         else:
-            pattern_str = rf"\b{re.escape(name)}\b"
+            pattern_str = rf"\b{re.escape(norm_name)}\b"
         try:
             compiled.append((name, re.compile(pattern_str, re.IGNORECASE)))
         except Exception as exc:
@@ -195,34 +198,84 @@ def load_authors() -> list[tuple[str, re.Pattern]]:
     return compiled
 
 
-def extract_authors(item, source_name: str) -> list[str]:
-    """Extract candidate author strings from feedparser entry and source."""
+def extract_authors_list(item, source_name: str, raw_summary: str = "") -> list[str]:
+    """Extract individual author name strings from feed entry or source."""
     authors = []
+
+    # 1. feedparser parsed authors list
     raw_authors = getattr(item, "authors", None)
     if raw_authors and isinstance(raw_authors, list):
         for a in raw_authors:
             if isinstance(a, dict) and a.get("name"):
-                authors.append(a["name"])
-            elif isinstance(a, str):
-                authors.append(a)
-    single_author = getattr(item, "author", None)
-    if single_author and isinstance(single_author, str):
-        authors.append(single_author)
-    creator = getattr(item, "dc_creator", None) or getattr(item, "creator", None)
-    if creator and isinstance(creator, str):
-        authors.append(creator)
-    if source_name:
-        authors.append(source_name)
+                name = a["name"].strip()
+                if name:
+                    authors.append(name)
+            elif isinstance(a, str) and a.strip():
+                authors.append(a.strip())
+
+    # 2. Dublin Core creator or author field
+    if not authors:
+        creator = (
+            getattr(item, "dc_creator", None)
+            or getattr(item, "creator", None)
+            or getattr(item, "author", None)
+        )
+        if creator and isinstance(creator, str):
+            parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|;\s*", creator.strip())
+            for p in parts:
+                cleaned = p.strip()
+                if cleaned:
+                    authors.append(cleaned)
+
+    # 3. Check for "Author(s): ..." at the start of summary (e.g. APS PRX Quantum)
+    if not authors and raw_summary:
+        m = re.match(r"^Author\(s\)?:\s*([^\n\r]+)", raw_summary)
+        if m:
+            authors_part = m.group(1).strip()
+            parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|;\s*", authors_part)
+            for p in parts:
+                cleaned = p.strip()
+                if cleaned:
+                    authors.append(cleaned)
+
+    # 4. Fallback for academic blogs (category blogs)
+    if not authors and source_name:
+        blog_author = re.sub(r"\s*\(.*?\)", "", source_name).strip()
+        if blog_author:
+            authors.append(blog_author)
+
     return authors
 
 
-def find_notable_author(authors: list[str], notable_authors: list[tuple[str, re.Pattern]]) -> str:
-    """Return the name of the first matching notable author, or empty string."""
-    combined = " ; ".join(authors)
-    for name, pattern in notable_authors:
-        if pattern.search(combined):
-            return name
+def check_author_notable(author_name: str, notable_patterns: list[tuple[str, re.Pattern]]) -> str:
+    """Return canonical name if the author matches any notable author pattern, else empty string."""
+    norm = normalize_text(author_name)
+    for canonical_name, pattern in notable_patterns:
+        if pattern.search(norm) or pattern.search(author_name):
+            return canonical_name
     return ""
+
+
+def render_authors_html(authors: list[str], notable_patterns: list[tuple[str, re.Pattern]]) -> tuple[str, list[str]]:
+    """Format authors into HTML, prefixing notable authors with a star ★."""
+    if not authors:
+        return "", []
+
+    formatted_parts = []
+    matched_notables = []
+    for author in authors:
+        matched = check_author_notable(author, notable_patterns)
+        safe_name = html.escape(author)
+        if matched:
+            matched_notables.append(matched)
+            formatted_parts.append(
+                f'<span class="notable-author" title="Notable author: {html.escape(matched, quote=True)}">★ {safe_name}</span>'
+            )
+        else:
+            formatted_parts.append(f'<span class="author-name">{safe_name}</span>')
+
+    html_out = f'<p class="authors">{", ".join(formatted_parts)}</p>'
+    return html_out, matched_notables
 
 
 def matches_criteria(title: str, summary: str) -> bool:
@@ -232,10 +285,27 @@ def matches_criteria(title: str, summary: str) -> bool:
     return bool(INCLUDE_PATTERN.search(text))
 
 
-def clean_summary(raw: str) -> str:
+def clean_summary(raw: str, authors: list[str] = None) -> str:
     text = re.sub(r"<[^>]+>", " ", raw or "")
     text = html.unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    if text.startswith("Author(s):"):
+        if authors:
+            last_author = authors[-1]
+            last_parts = last_author.split()
+            last_surname = last_parts[-1] if last_parts else last_author
+            idx = text[:250].find(last_surname)
+            if idx != -1:
+                end_idx = idx + len(last_surname)
+                abstract = text[end_idx:].strip()
+                abstract = re.sub(r"^[\s,\.;]+", "", abstract)
+                if abstract:
+                    text = abstract
+        else:
+            m = re.match(r"^Author\(s\):.*?\s+and\s+[A-Za-z\.\'\-]+\s+(?=[A-Z][a-z]+)(.*)", text)
+            if m:
+                text = m.group(1).strip()
+    return text
 
 
 def fetch_feed(source_name: str, url: str):
@@ -261,6 +331,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quantum Systems Feed</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ea580c'/%3E%3Ctext x='16' y='20.5' text-anchor='middle' font-family='system-ui, -apple-system, sans-serif' font-weight='900' font-size='13' fill='%23ffffff' letter-spacing='0.5px'%3ERSS%3C/text%3E%3C/svg%3E">
+  <link rel="alternate icon" href="favicon.svg" type="image/svg+xml">
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -326,6 +398,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     body.important-only li.entry[data-important="false"] { display: none !important; }
     button#toggle-important.on { background: rgba(128,128,128,.28); border-color: currentColor; font-weight: 600; }
     .date { font-size: .8em; opacity: .65; white-space: nowrap; }
+    .authors { font-size: .84em; opacity: .85; margin: 3px 0 6px; line-height: 1.4; }
+    .notable-author { font-weight: 700; opacity: 1; }
     .summary-text { margin: 4px 0 8px; font-size: .9em; opacity: .85; }
     .actions { display: flex; gap: 5px; }
     .actions button { font-size: .78em; padding: 1px 6px; }
@@ -467,9 +541,9 @@ window.__REPO__ = __REPO_JSON__;</script>
       var star = li.querySelector(".star-icon");
       if (star) {
         if (hasNotable && vote === "up") {
-          star.title = "Notable author: " + li.getAttribute("data-notable-author") + " (Upvoted)";
+          star.title = "Notable author(s): " + li.getAttribute("data-notable-author") + " (Upvoted)";
         } else if (hasNotable) {
-          star.title = "Notable author: " + li.getAttribute("data-notable-author");
+          star.title = "Notable author(s): " + li.getAttribute("data-notable-author");
         } else if (vote === "up") {
           star.title = "Upvoted paper";
         }
@@ -764,8 +838,8 @@ def build_feed(output_dir: str = "public") -> None:
                     entries_count += 1
                     added_for_source += 1
 
-                    entry_authors = extract_authors(item, source_name)
-                    matched_notable = find_notable_author(entry_authors, notable_authors)
+                    entry_authors = extract_authors_list(item, source_name, summary)
+                    cleaned_summary_text = clean_summary(summary, entry_authors)
 
                     published = getattr(item, "published_parsed", None) or getattr(
                         item, "updated_parsed", None
@@ -788,14 +862,14 @@ def build_feed(output_dir: str = "public") -> None:
                     entry.id(link)
                     entry.title(f"[{source_name}] {title}")
                     entry.link(href=link)
-                    entry.description(summary)
+                    entry.description(cleaned_summary_text)
                     entry.pubDate(published_date)
 
                     cat_entry = category_fgs[cid].add_entry()
                     cat_entry.id(link)
                     cat_entry.title(f"[{source_name}] {title}")
                     cat_entry.link(href=link)
-                    cat_entry.description(summary)
+                    cat_entry.description(cleaned_summary_text)
                     cat_entry.pubDate(published_date)
 
                     collected.append(
@@ -804,9 +878,9 @@ def build_feed(output_dir: str = "public") -> None:
                             "category": cid,
                             "title": title,
                             "link": link,
-                            "summary": clean_summary(summary),
+                            "summary": cleaned_summary_text,
                             "published": published_date,
-                            "notable_author": matched_notable,
+                            "authors": entry_authors,
                         }
                     )
 
@@ -819,6 +893,10 @@ def build_feed(output_dir: str = "public") -> None:
 
     if os.path.exists(AUTHORS_FILE):
         shutil.copyfile(AUTHORS_FILE, os.path.join(output_dir, "authors.json"))
+
+    favicon_file = os.path.join(REPO_ROOT, "favicon.svg")
+    if os.path.exists(favicon_file):
+        shutil.copyfile(favicon_file, os.path.join(output_dir, "favicon.svg"))
 
     by_source = {}
     for cat in CATEGORIES:
@@ -841,13 +919,21 @@ def build_feed(output_dir: str = "public") -> None:
         safe_link = html.escape(item["link"], quote=True)
         safe_source = html.escape(item["source"], quote=True)
         safe_title = html.escape(item["title"], quote=True)
-        notable = item.get("notable_author", "")
-        safe_notable = html.escape(notable, quote=True)
+
+        authors_list = item.get("authors", [])
+        authors_html, matched_notables = render_authors_html(authors_list, notable_authors)
         is_up = record.get("vote") == "up"
-        is_important = bool(notable or is_up)
+        is_important = bool(matched_notables or is_up)
         important_attr = "true" if is_important else "false"
 
-        star_title = f"Notable author: {notable}" if notable else "Upvoted paper"
+        safe_notable = html.escape(", ".join(matched_notables), quote=True)
+        if matched_notables and is_up:
+            star_title = f"Notable author(s): {', '.join(matched_notables)} (Upvoted)"
+        elif matched_notables:
+            star_title = f"Notable author(s): {', '.join(matched_notables)}"
+        else:
+            star_title = "Upvoted paper"
+
         star_html = (
             f'<span class="star-icon" title="{html.escape(star_title, quote=True)}">★ </span>'
         )
@@ -861,6 +947,7 @@ def build_feed(output_dir: str = "public") -> None:
             f'<a class="title" href="{safe_link}">{star_html}{html.escape(item["title"])}</a>'
             f'<span class="date">{date_str}</span>'
             "</div>"
+            f"{authors_html}"
             f"{summary_html}"
             '<div class="actions">'
             '<button class="act" type="button" data-action="up" '

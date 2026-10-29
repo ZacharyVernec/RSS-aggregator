@@ -35,6 +35,8 @@ The generated feeds and web page are written to `public/`:
 
 Important papers are visually distinguished in the web feed with an eye-catching monochrome star (**★**) and larger bold typography (1.15em), making them stand out at a glance while preserving the site's clean aesthetic.
 
+Additionally, the paper entry displays the author line with the star (**★**) placed directly next to the notable author's name (e.g. `★ Dominic W. Berry, Kianna Wan, ..., ★ Ryan Babbush`), so you can immediately see which specific researcher triggered the highlight.
+
 A paper is marked as important if:
 1. **Authored by a notable researcher**: It is authored or co-authored by any researcher listed in [`authors.json`](authors.json).
 2. **Upvoted by you**: Clicking the **Up** button immediately stars and highlights the paper.
