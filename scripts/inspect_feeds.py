@@ -5,7 +5,7 @@ FEEDS = [
     ("PRX Quantum", "https://feeds.aps.org/rss/recent/prxquantum.xml"),
     ("Quantum Journal", "https://quantum-journal.org/feed/"),
     ("npj Quantum Information", "https://www.nature.com/npjqi.rss"),
-    ("Quantum Science and Technology", "https://iopscience.iop.org/journal/rss/2058-9565"),
+    ("IOP Quantum Science and Technology", "https://iopscience.iop.org/journal/rss/2058-9565"),
     ("ACM TQC", "https://dl.acm.org/action/showFeed?type=etoc&feed=rss&jc=tqc"),
     ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8924785.XML"),
 ]

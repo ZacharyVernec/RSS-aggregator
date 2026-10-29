@@ -16,12 +16,12 @@ CATEGORIES = [
     {
         "id": "journals",
         "title": "Journals",
-        "description": "Peer-reviewed papers from PRX Quantum, Quantum, npj QI, Quantum Science and Technology, ACM TQC, and IEEE TQE.",
+        "description": "Peer-reviewed papers from PRX Quantum, Quantum, npj QI, IOP Quantum Science and Technology, ACM TQC, and IEEE TQE.",
         "feeds": [
             ("PRX Quantum", "https://feeds.aps.org/rss/recent/prxquantum.xml"),
             ("Quantum Journal", "https://quantum-journal.org/feed/"),
             ("npj Quantum Information", "https://www.nature.com/npjqi.rss"),
-            ("Quantum Science and Technology", "https://iopscience.iop.org/journal/rss/2058-9565"),
+            ("IOP Quantum Science and Technology", "https://iopscience.iop.org/journal/rss/2058-9565"),
             ("ACM TQC", "https://dl.acm.org/action/showFeed?type=etoc&feed=rss&jc=tqc"),
             ("IEEE TQE", "https://ieeexplore.ieee.org/rss/TOC8924785.XML"),
         ],
@@ -112,6 +112,7 @@ REQUEST_ATTEMPTS = 2
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEEDBACK_FILE = os.path.join(REPO_ROOT, "feedback.json")
 AUTHORS_FILE = os.path.join(REPO_ROOT, "authors.json")
+DOI_CACHE_FILE = os.path.join(REPO_ROOT, ".doi_cache.json")
 
 
 def detect_repo() -> tuple:
@@ -198,20 +199,155 @@ def load_authors() -> list[tuple[str, re.Pattern]]:
     return compiled
 
 
-def extract_authors_list(item, source_name: str, raw_summary: str = "") -> list[str]:
-    """Extract individual author name strings from feed entry or source."""
-    authors = []
+def load_doi_cache() -> dict:
+    if os.path.exists(DOI_CACHE_FILE):
+        try:
+            with open(DOI_CACHE_FILE, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except Exception:
+            return {}
+    return {}
 
-    # 1. feedparser parsed authors list
-    raw_authors = getattr(item, "authors", None)
-    if raw_authors and isinstance(raw_authors, list):
-        for a in raw_authors:
-            if isinstance(a, dict) and a.get("name"):
-                name = a["name"].strip()
+
+def save_doi_cache(cache: dict):
+    try:
+        with open(DOI_CACHE_FILE, "w", encoding="utf-8") as handle:
+            json.dump(cache, handle, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def clean_abstract_xml(raw: str) -> str:
+    """Clean JATS XML or HTML tags from abstract text."""
+    if not raw:
+        return ""
+    text = re.sub(r"<jats:title[^>]*>.*?</jats:title>", "", raw, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def extract_doi(item) -> str:
+    """Extract DOI string from feed item fields or link."""
+    doi = getattr(item, "prism_doi", None)
+    if not doi:
+        dc_id = getattr(item, "dc_identifier", "")
+        if dc_id and "10." in dc_id:
+            m = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", dc_id)
+            if m:
+                doi = m.group(0)
+    if not doi:
+        link = getattr(item, "link", "")
+        m = re.search(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", link)
+        if m:
+            doi = m.group(0)
+    return doi or ""
+
+
+def fetch_doi_metadata(doi: str, url: str = None) -> dict:
+    """Fetch metadata (authors, abstract) for a given DOI using Crossref API and webpage fallback."""
+    if not doi:
+        return {}
+    doi = doi.strip()
+    if doi.lower().startswith("doi:"):
+        doi = doi[4:].strip()
+
+    cache = load_doi_cache()
+    if doi in cache and cache[doi].get("abstract"):
+        return cache[doi]
+
+    result = cache.get(doi, {})
+    headers = {"User-Agent": "QuantumFeed/1.0 (mailto:contact@example.org)"}
+
+    # 1. Crossref API
+    try:
+        cr_url = f"https://api.crossref.org/works/{doi}"
+        resp = requests.get(cr_url, headers=headers, timeout=6)
+        if resp.status_code == 200:
+            msg = resp.json().get("message", {})
+            authors = []
+            for a in msg.get("author", []):
+                given = a.get("given", "").strip()
+                family = a.get("family", "").strip()
+                name = f"{given} {family}".strip() if given or family else a.get("name", "").strip()
                 if name:
                     authors.append(name)
-            elif isinstance(a, str) and a.strip():
-                authors.append(a.strip())
+            if authors:
+                result["authors"] = authors
+            raw_abstract = msg.get("abstract", "")
+            if raw_abstract:
+                clean_abs = clean_abstract_xml(raw_abstract)
+                if clean_abs:
+                    result["abstract"] = clean_abs
+    except Exception:
+        pass
+
+    # 2. Webpage meta description fallback (for Nature / npj QI)
+    if not result.get("abstract") and url:
+        try:
+            art_resp = requests.get(url, headers=REQUEST_HEADERS, timeout=6)
+            if art_resp.status_code == 200:
+                m = re.search(r'<meta\s+name=["\'](?:dc\.)?description["\']\s+content=["\'](.*?)["\']', art_resp.text, re.IGNORECASE)
+                if m:
+                    clean_abs = clean_abstract_xml(m.group(1))
+                    if clean_abs:
+                        result["abstract"] = clean_abs
+        except Exception:
+            pass
+
+    if result:
+        cache[doi] = result
+        save_doi_cache(cache)
+    return result
+
+
+def split_author_string(s: str) -> list[str]:
+    """Split a string containing one or multiple author names into individual names."""
+    if not s or not s.strip():
+        return []
+    s = s.strip()
+    # Semicolon separated (e.g. IEEE TQE)
+    if ";" in s:
+        return [p.strip() for p in s.split(";") if p.strip()]
+
+    # Normalize "and", "&", Oxford comma
+    norm = re.sub(r",?\s+(?:and|&)\s+", ", ", s)
+    raw_parts = [p.strip() for p in norm.split(",") if p.strip()]
+
+    merged = []
+    jr_suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+    for part in raw_parts:
+        if merged and part.lower().strip() in jr_suffixes:
+            merged[-1] = f"{merged[-1]}, {part}"
+        else:
+            merged.append(part)
+    return merged
+
+
+def extract_authors_list(
+    item, source_name: str, raw_summary: str = "", doi_meta: dict = None
+) -> list[str]:
+    """Extract individual author name strings from feed entry or source."""
+    # If DOI metadata provided authors (e.g. ACM TQC where RSS authors are run together)
+    if doi_meta and doi_meta.get("authors"):
+        return doi_meta["authors"]
+
+    authors = []
+
+    # 1. feedparser parsed authors list or string
+    raw_authors = getattr(item, "authors", None)
+    if raw_authors:
+        if isinstance(raw_authors, list):
+            for a in raw_authors:
+                if isinstance(a, dict) and a.get("name"):
+                    name = a["name"].strip()
+                    if name:
+                        authors.extend(split_author_string(name))
+                elif isinstance(a, str) and a.strip():
+                    authors.extend(split_author_string(a.strip()))
+        elif isinstance(raw_authors, str) and raw_authors.strip():
+            authors.extend(split_author_string(raw_authors.strip()))
 
     # 2. Dublin Core creator or author field
     if not authors:
@@ -221,25 +357,17 @@ def extract_authors_list(item, source_name: str, raw_summary: str = "") -> list[
             or getattr(item, "author", None)
         )
         if creator and isinstance(creator, str):
-            parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|;\s*", creator.strip())
-            for p in parts:
-                cleaned = p.strip()
-                if cleaned:
-                    authors.append(cleaned)
+            authors.extend(split_author_string(creator.strip()))
 
     # 3. Check for "Author(s): ..." at the start of summary (e.g. APS PRX Quantum)
     if not authors and raw_summary:
-        m = re.match(r"^Author\(s\)?:\s*([^\n\r]+)", raw_summary)
+        m = re.search(r"Author\(s\)?:\s*([^\n\r<]+)", raw_summary, re.IGNORECASE)
         if m:
             authors_part = m.group(1).strip()
-            parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|;\s*", authors_part)
-            for p in parts:
-                cleaned = p.strip()
-                if cleaned:
-                    authors.append(cleaned)
+            authors.extend(split_author_string(authors_part))
 
     # 4. Fallback for academic blogs (category blogs)
-    if not authors and source_name:
+    if not authors and source_name and ("Blog" in source_name or "(" in source_name):
         blog_author = re.sub(r"\s*\(.*?\)", "", source_name).strip()
         if blog_author:
             authors.append(blog_author)
@@ -285,27 +413,85 @@ def matches_criteria(title: str, summary: str) -> bool:
     return bool(INCLUDE_PATTERN.search(text))
 
 
-def clean_summary(raw: str, authors: list[str] = None) -> str:
-    text = re.sub(r"<[^>]+>", " ", raw or "")
+def clean_summary(
+    raw: str,
+    authors: list[str] = None,
+    source_name: str = "",
+    title: str = "",
+    doi_meta: dict = None,
+) -> str:
+    # 1. If doi_meta has an abstract, prefer it for ACM TQC or npj QI (or if raw summary is empty)
+    if doi_meta and doi_meta.get("abstract"):
+        if source_name in ("ACM TQC", "npj Quantum Information") or not raw:
+            return doi_meta["abstract"]
+
+    text = raw or ""
+    # Strip HTML tags
+    text = re.sub(r"<[^>]+>", " ", text)
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
+
+    # PRX Quantum: Strip "Author(s): ..."
     if text.startswith("Author(s):"):
+        cleaned = False
         if authors:
-            last_author = authors[-1]
-            last_parts = last_author.split()
-            last_surname = last_parts[-1] if last_parts else last_author
-            idx = text[:250].find(last_surname)
+            last_author = authors[-1].strip()
+            idx = text.find(last_author)
             if idx != -1:
-                end_idx = idx + len(last_surname)
-                abstract = text[end_idx:].strip()
-                abstract = re.sub(r"^[\s,\.;]+", "", abstract)
-                if abstract:
-                    text = abstract
-        else:
-            m = re.match(r"^Author\(s\):.*?\s+and\s+[A-Za-z\.\'\-]+\s+(?=[A-Z][a-z]+)(.*)", text)
+                end_idx = idx + len(last_author)
+            else:
+                name_clean = re.sub(r"\s*\(.*?\)", "", last_author).strip()
+                surname = name_clean.split()[-1] if name_clean.split() else name_clean
+                idx = text.find(surname)
+                if idx != -1:
+                    end_idx = idx + len(surname)
+                    rem = text[end_idx:].strip()
+                    if rem.startswith("(") and ")" in rem[:40]:
+                        end_idx += rem.find(")") + 1
+            if idx != -1:
+                remainder = text[end_idx:].strip()
+                remainder = re.sub(r"^[\s,\.;\(\)]+", "", remainder).strip()
+                if remainder:
+                    text = remainder
+                    cleaned = True
+        if not cleaned:
+            m = re.match(r"^Author\(s\):.*?\s+(?:and\s+)?[A-Za-z\.\'\-]+\s+(?=[A-Z][a-z]+)(.*)", text)
             if m:
                 text = m.group(1).strip()
-    return text
+        text = re.sub(r"\[PRX Quantum\s+\d+,\s+[A-Za-z0-9]+\]\s+Published\s+.*$", "", text).strip()
+
+    # Quantum Journal: Strip leading citation e.g. "Quantum 10, 2247 (2026). https://doi.org/..."
+    text = re.sub(
+        r"^Quantum\s+\d+,\s+\d+\s*\(\d{4}\)\.?\s*(?:https?://\S+)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # npj Quantum Information: Strip leading citation e.g. "npj Quantum Information, Published online: ...; doi:..."
+    text = re.sub(
+        r"^npj\s+Quantum\s+Information,\s*Published\s+online:.*?(?:doi:\S+)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # ACM TQC: Strip citation e.g. "ACM Transactions on Quantum Computing, Volume ..."
+    if text.startswith("ACM Transactions on Quantum Computing"):
+        if doi_meta and doi_meta.get("abstract"):
+            return doi_meta["abstract"]
+        text = re.sub(
+            r"^ACM\s+Transactions\s+on\s+Quantum\s+Computing,.*?\d{4}\.?\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+
+    # If text is empty or just duplicate of title (common in nature.com RSS):
+    if (not text or (title and text.strip().lower() == title.strip().lower())) and doi_meta and doi_meta.get("abstract"):
+        return doi_meta["abstract"]
+
+    return text.strip()
 
 
 def fetch_feed(source_name: str, url: str):
@@ -833,13 +1019,27 @@ def build_feed(output_dir: str = "public") -> None:
                 if not summary:
                     summary = getattr(item, "description", "")
 
-                if is_exempt or matches_criteria(title, summary):
+                doi = extract_doi(item)
+                doi_meta = {}
+                if doi and (
+                    cid == "journals"
+                    and (
+                        source_name in ("ACM TQC", "npj Quantum Information")
+                        or not summary
+                        or len(summary) < 80
+                    )
+                ):
+                    doi_meta = fetch_doi_metadata(doi, link)
+
+                entry_authors = extract_authors_list(item, source_name, summary, doi_meta)
+                cleaned_summary_text = clean_summary(
+                    summary, entry_authors, source_name, title, doi_meta
+                )
+
+                if is_exempt or matches_criteria(title, cleaned_summary_text or summary):
                     seen_links.add(link)
                     entries_count += 1
                     added_for_source += 1
-
-                    entry_authors = extract_authors_list(item, source_name, summary)
-                    cleaned_summary_text = clean_summary(summary, entry_authors)
 
                     published = getattr(item, "published_parsed", None) or getattr(
                         item, "updated_parsed", None

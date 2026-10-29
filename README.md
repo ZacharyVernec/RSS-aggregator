@@ -3,7 +3,7 @@
 This repository aggregates papers and whitepapers matching quantum systems, compilation, and theory keywords across peer-reviewed journals, arXiv preprints, and industry technical leaders.
 
 The landing page organizes matched articles into four dedicated tabs:
-1. **Journals**: Peer-reviewed publications from PRX Quantum, Quantum, npj Quantum Information, Quantum Science and Technology, ACM TQC, and IEEE TQE.
+1. **Journals**: Peer-reviewed publications from PRX Quantum, Quantum, npj Quantum Information, IOP Quantum Science and Technology, ACM TQC, and IEEE TQE.
 2. **arXiv**: Preprints from arXiv `quant-ph`.
 3. **Industry & Whitepapers**: Technical engineering blogs, benchmarks, and architecture whitepapers from AWS Quantum, Microsoft Quantum, Qiskit, Quandela, Google Research, and IBM Research.
 4. **Academic Blogs**: Personal research blogs, essays, and notes from quantum computing, QEC, and theoretical computer science researchers (Scott Aaronson, Craig Gidney, Quantum Frontiers, Earl Campbell, Thomas Vidick, Dave Bacon's *The Quantum Pontiff*, Gil Kalai, Matt Leifer, Vivien Londe, Windows on Theory, Computational Complexity, Gödel's Lost Letter, and QuTech). **Exempt from keyword filters** so personal essays and commentary are preserved in full.
